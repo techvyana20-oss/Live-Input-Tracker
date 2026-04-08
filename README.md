@@ -84,4 +84,4 @@ This project is created for **educational purposes only**.
 
 ## 👨‍💻 Author
 
-**TechVyana 🚀**
+**Tech Vyana 2.0🚀**
